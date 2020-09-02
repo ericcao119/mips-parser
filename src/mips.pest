@@ -1,0 +1,71 @@
+// Reversed so that we try to match longer registers $10 before shorter registers $1 
+reg = @{ "$ra"|"$fp"|"$sp"|"$gp"|"$k1"|"$k0"|"$t9"|"$t8"|"$s7"|"$s6"|"$s5"|"$s4"|"$s3"|"$s2"|"$s1"|"$s0"|"$t7"|"$t6"|"$t5"|"$t4"|"$t3"|"$t2"|"$t1"|"$t0"|"$a3"|"$a2"|"$a1"|"$a0"|"$v1"|"$v0"|"$at"|"$zero"|"$31"|"$30"|"$29"|"$28"|"$27"|"$26"|"$25"|"$24"|"$23"|"$22"|"$21"|"$20"|"$19"|"$18"|"$17"|"$16"|"$15"|"$14"|"$13"|"$12"|"$11"|"$10"|"$9"|"$8"|"$7"|"$6"|"$5"|"$4"|"$3"|"$2"|"$1"|"$0"}
+fp_reg = @{ "$f31"|"$f30"|"$f29"|"$f28"|"$f27"|"$f26"|"$f25"|"$f24"|"$f23"|"$f22"|"$f21"|"$f20"|"$f19"|"$f18"|"$f17"|"$f16"|"$f15"|"$f14"|"$f13"|"$f12"|"$f11"|"$f10"|"$f9"|"$f8"|"$f7"|"$f6"|"$f5"|"$f4"|"$f3"|"$f2"|"$f1"|"$f0"}
+
+ident = @{!reg ~ !fp_reg ~ (ASCII_ALPHA | "." | "$" | "_") ~ (ASCII_ALPHANUMERIC | "." | "$" | "_")* }
+
+
+op_additive = { "+" | "-" }
+op_multiplicative = { "*" | "/" }
+op_unary = { "+" | "-" | "~"}
+op_bit_or = { "|" }
+op_bit_and = { "&" }
+
+
+int = ${("+" | "-")* ~ unsigned}
+unsigned = ${ bin | hex | dec }
+    bin = ${ "0" ~ ("b" | "B") ~ ("_"? ~ ASCII_BIN_DIGIT)+ }
+    hex = ${ "0" ~ ("x" | "X") ~ ("_"? ~ ASCII_HEX_DIGIT)+ }
+    dec = ${ ASCII_DIGIT ~ ("_"? ~ ASCII_DIGIT)* }
+
+char = ${ "\'" ~ (escape | ANY) ~ "\'"}
+quote_string = ${ "\"" ~ (raw_string | escape)* ~ "\"" }
+    raw_string = @{ (!("\\" | "\"") ~ ANY)+ }
+    escape     = ${ "\\" ~ (predefined | byte) }
+    predefined = { "n" | "r" | "t" | "\\" | "0" | "\"" | "'" }
+    byte       = { "x" ~ ASCII_HEX_DIGIT{2} }
+
+str_decl = {quote_string | quote_string ~ ":" ~ int}
+str_list = { str_decl ~ ("," ~ str_decl)* | str_decl+}
+
+uimm16 = { imm32 }
+imm16 = { imm32 }
+br_imm32 = { imm32 }
+// TODO: Break these up to make the translation easier
+imm32 = {abs_addr | "(" ~ abs_addr ~ ")" ~ ">>" ~ int | ident ~ op_additive ~ abs_addr | ident}
+addr = {ident ~ op_additive ~ abs_addr ~ "(" ~ reg ~ ")"
+            | ident ~ op_additive ~ abs_addr | abs_addr ~ op_additive ~ ident
+            | abs_addr ~ "(" ~ reg ~ ")" | ident ~ "(" ~ reg ~ ")"
+            | "(" ~ reg ~ ")"
+            | abs_addr
+            | ident}
+    abs_addr = {int ~ op_additive ~ int | int}
+
+src1 = { reg }
+src2 = { reg }
+dest = { reg }
+
+f_dest = { fp_reg }
+f_src1 = { fp_reg }
+f_src2 = { fp_reg }
+
+cop_reg = { reg | fp_reg }
+
+cc_reg = { reg }
+
+label = { ident }
+
+// expressions
+
+expr = { bit_or_expr }
+bit_or_expr = { bit_and_expr ~ (op_bit_or ~ bit_and_expr)* }
+bit_and_expr = {add_expr ~ (op_bit_and ~ add_expr)* }
+add_expr = { mul_expr ~ (op_additive ~ mul_expr)* }
+mul_expr = { unary_expr ~ (op_multiplicative ~ unary_expr)* }
+unary_expr = { (op_unary ~ atomic_expr) | atomic_expr }
+
+atomic_expr = { unsigned | ident | "(" ~ expr ~ ")" }
+
+// directives
+
+// opcodes
