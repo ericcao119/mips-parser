@@ -1,21 +1,55 @@
 use std::{
-    boxed::Box, collections::HashMap, fmt, mem::transmute_copy, num::Wrapping, str::FromStr,
-    vec::Vec,
+    boxed::Box, collections::HashMap, collections::HashSet, fmt, mem::transmute_copy,
+    num::Wrapping, ops, str, vec::Vec,
 };
 
+/* Convenience Macros */
+macro_rules! op_expr {
+    ($first:expr $(, $op: expr, $operand: expr)*) => {
+        {
+            Operand::Expr(Box::new(Expr {
+                first: $first,
+                rest: vec![
+                    $(
+                        BinaryOperation {
+                            operator: $op,
+                            operand: $operand,
+                        },
+                    )*
+                ],
+            }))
+        }
+    };
+}
+
+macro_rules! op_unary {
+    ($op: expr, $operand: expr) => {{
+        Operand::Unary(Box::new(Unary {
+            operator: $op,
+            operand: $operand,
+        }))
+    }};
+}
+
+// Helpers
+
 fn to_i32(value: Wrapping<u32>) -> Wrapping<i32> {
-    let reinterpreted: Wrapping<i32> = Wrapping(unsafe { transmute_copy(&value.0) });
+    let reinterpreted: Wrapping<i32> = Wrapping(unsafe { transmute_copy::<u32, i32>(&value.0) });
     reinterpreted
 }
 
 fn to_u32(value: Wrapping<i32>) -> Wrapping<u32> {
-    let reinterpreted: Wrapping<u32> = Wrapping(unsafe { transmute_copy(&value.0) });
+    let reinterpreted: Wrapping<u32> = Wrapping(unsafe { transmute_copy::<i32, u32>(&value.0) });
     reinterpreted
 }
+
+// Traits
 
 pub trait Eval {
     fn eval(&self, mapping: fn(&str) -> Wrapping<u32>) -> Wrapping<u32>;
 }
+
+// C-like Enums
 
 enum MonOp {
     PosOp,
@@ -23,7 +57,7 @@ enum MonOp {
     BitNotOp,
 }
 
-impl FromStr for MonOp {
+impl str::FromStr for MonOp {
     type Err = ();
 
     fn from_str(s: &str) -> Result<MonOp, ()> {
@@ -46,16 +80,28 @@ impl fmt::Display for MonOp {
     }
 }
 
+/// Currently at most 2^16 operators can share the same precedence.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 enum BinOp {
-    PlusOp,
-    MinusOp,
-    TimesOp,
-    DivideOp,
-    BitAndOp,
-    BitOrOp,
+    TimesOp = 0x00,
+    DivideOp = 0x01,
+    // ---
+    PlusOp = 0x100,
+    MinusOp = 0x101,
+    // ---
+    BitAndOp = 0x200,
+    // ---
+    BitOrOp = 0x400,
 }
 
-impl FromStr for BinOp {
+impl BinOp {
+    fn same_precedence(lhs: &BinOp, rhs: &BinOp) -> bool {
+        const PRECEDENCE_MASK: u32 = 0xffffff00;
+        (*lhs as u32 & PRECEDENCE_MASK) == (*rhs as u32 & PRECEDENCE_MASK)
+    }
+}
+
+impl str::FromStr for BinOp {
     type Err = ();
 
     fn from_str(s: &str) -> Result<BinOp, ()> {
@@ -84,7 +130,8 @@ impl fmt::Display for BinOp {
     }
 }
 
-struct Unary {
+// Atomic expression types
+pub struct Unary {
     operator: MonOp,
     operand: Operand,
 }
@@ -97,7 +144,7 @@ impl fmt::Display for Unary {
 
 impl Eval for Unary {
     fn eval(&self, mapping: fn(&str) -> Wrapping<u32>) -> Wrapping<u32> {
-        let mut value: Wrapping<u32> = self.operand.eval(mapping);
+        let value: Wrapping<u32> = self.operand.eval(mapping);
 
         match self.operator {
             MonOp::PosOp => value,
@@ -118,7 +165,8 @@ impl fmt::Display for BinaryOperation {
     }
 }
 
-struct Expr {
+/// An expression. We assume that all expressions on the same level have equal precedence
+pub struct Expr {
     first: Operand,
     rest: Vec<BinaryOperation>,
 }
@@ -158,7 +206,7 @@ impl Eval for Expr {
     }
 }
 
-enum Operand {
+pub enum Operand {
     Var(String),
     Num(Wrapping<u32>),
     Unary(Box<Unary>),
@@ -166,16 +214,37 @@ enum Operand {
 }
 
 impl Operand {
-    fn constant(num: u32) -> Operand {
+    // Atomic factory methods
+    pub fn unsigned(num: u32) -> Operand {
         Operand::Num(Wrapping(num))
     }
 
-    fn var(name: &str) -> Operand {
+    pub fn var(name: &str) -> Operand {
         Operand::Var(String::from(name))
     }
 
-    fn integer(num: i32) -> Operand {
-        Operand::Num(Wrapping(unsafe { transmute_copy(&num) }))
+    pub fn int(num: i32) -> Operand {
+        Operand::Num(Wrapping(unsafe { transmute_copy::<i32, u32>(&num) }))
+    }
+
+    /// Combine the left and right hand sides. If the combination is of the same precedence as the lhs, then it will merge the rhs without creating a new level.
+    fn combine(lhs: Operand, operator: BinOp, rhs: Operand) -> Operand {
+        match lhs {
+            Operand::Expr(mut expr) => {
+                if expr.rest.len() == 0
+                    || !BinOp::same_precedence(&operator, &expr.rest[0].operator)
+                {
+                    op_expr![Operand::Expr(expr), operator, rhs]
+                } else {
+                    expr.rest.push(BinaryOperation {
+                        operator: operator,
+                        operand: rhs,
+                    });
+                    Operand::Expr(expr)
+                }
+            }
+            _ => op_expr![lhs, operator, rhs],
+        }
     }
 }
 
@@ -200,6 +269,304 @@ impl Eval for Operand {
             Operand::Unary(unary) => (*unary).eval(mapping),
             Operand::Expr(expr) => (*expr).eval(mapping),
         }
+    }
+}
+
+/* Add Operations */
+impl ops::Add<i32> for Operand {
+    type Output = Operand;
+
+    fn add(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::PlusOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::PlusOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::Add<u32> for Operand {
+    type Output = Operand;
+
+    fn add(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::PlusOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::PlusOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::Add<&str> for Operand {
+    type Output = Operand;
+
+    fn add(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::PlusOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::PlusOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::Add<Operand> for Operand {
+    type Output = Operand;
+
+    fn add(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::PlusOp, rhs),
+            _ => op_expr![self, BinOp::PlusOp, rhs],
+        }
+    }
+}
+
+/* Sub Operations */
+impl ops::Sub<i32> for Operand {
+    type Output = Operand;
+
+    fn sub(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::MinusOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::MinusOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::Sub<u32> for Operand {
+    type Output = Operand;
+
+    fn sub(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::MinusOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::MinusOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::Sub<&str> for Operand {
+    type Output = Operand;
+
+    fn sub(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::MinusOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::MinusOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::Sub<Operand> for Operand {
+    type Output = Operand;
+
+    fn sub(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::MinusOp, rhs),
+            _ => op_expr![self, BinOp::MinusOp, rhs],
+        }
+    }
+}
+
+/* Mul operations */
+impl ops::Mul<i32> for Operand {
+    type Output = Operand;
+
+    fn mul(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::TimesOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::TimesOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::Mul<u32> for Operand {
+    type Output = Operand;
+
+    fn mul(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::TimesOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::TimesOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::Mul<&str> for Operand {
+    type Output = Operand;
+
+    fn mul(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::TimesOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::TimesOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::Mul<Operand> for Operand {
+    type Output = Operand;
+
+    fn mul(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::TimesOp, rhs),
+            _ => op_expr![self, BinOp::TimesOp, rhs],
+        }
+    }
+}
+/* Divide Operations */
+
+impl ops::Div<i32> for Operand {
+    type Output = Operand;
+
+    fn div(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::DivideOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::DivideOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::Div<u32> for Operand {
+    type Output = Operand;
+
+    fn div(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::DivideOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::DivideOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::Div<&str> for Operand {
+    type Output = Operand;
+
+    fn div(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::DivideOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::DivideOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::Div<Operand> for Operand {
+    type Output = Operand;
+
+    fn div(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::DivideOp, rhs),
+            _ => op_expr![self, BinOp::DivideOp, rhs],
+        }
+    }
+}
+
+/* Bitwise And */
+
+impl ops::BitAnd<i32> for Operand {
+    type Output = Operand;
+
+    fn bitand(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitAndOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::BitAndOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::BitAnd<u32> for Operand {
+    type Output = Operand;
+
+    fn bitand(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitAndOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::BitAndOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::BitAnd<&str> for Operand {
+    type Output = Operand;
+
+    fn bitand(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitAndOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::BitAndOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::BitAnd<Operand> for Operand {
+    type Output = Operand;
+
+    fn bitand(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitAndOp, rhs),
+            _ => op_expr![self, BinOp::BitAndOp, rhs],
+        }
+    }
+}
+
+/* Bitwise Or */
+
+impl ops::BitOr<i32> for Operand {
+    type Output = Operand;
+
+    fn bitor(self, rhs: i32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitOrOp, Operand::int(rhs)),
+            _ => op_expr![self, BinOp::BitOrOp, Operand::int(rhs)],
+        }
+    }
+}
+
+impl ops::BitOr<u32> for Operand {
+    type Output = Operand;
+
+    fn bitor(self, rhs: u32) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitOrOp, Operand::unsigned(rhs)),
+            _ => op_expr![self, BinOp::BitOrOp, Operand::unsigned(rhs)],
+        }
+    }
+}
+
+impl ops::BitOr<&str> for Operand {
+    type Output = Operand;
+
+    fn bitor(self, rhs: &str) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitOrOp, Operand::var(rhs)),
+            _ => op_expr![self, BinOp::BitOrOp, Operand::var(rhs)],
+        }
+    }
+}
+
+impl ops::BitOr<Operand> for Operand {
+    type Output = Operand;
+
+    fn bitor(self, rhs: Operand) -> Operand {
+        match &self {
+            Operand::Expr(_) => Operand::combine(self, BinOp::BitOrOp, rhs),
+            _ => op_expr![self, BinOp::BitOrOp, rhs],
+        }
+    }
+}
+
+/* Unary operations */
+impl ops::Neg for Operand {
+    type Output = Operand;
+
+    fn neg(self) -> Operand {
+        op_unary![MonOp::NegOp, self]
+    }
+}
+
+impl ops::Not for Operand {
+    type Output = Operand;
+
+    fn not(self) -> Operand {
+        op_unary![MonOp::BitNotOp, self]
+    }
+}
+
+impl Operand {
+    /// Applies the positive operator on the number. Note that Rust does not support + which is why we define our own
+    pub fn positive(self) -> Operand {
+        // Do nothing. The + operator is pretty useless except as a symmetry to negative.
+        // Since it is so useless, we just compress it entirely.
+        self
     }
 }
 
@@ -258,195 +625,202 @@ mod tests {
     #[test]
     fn test_unary_label() {
         let var = String::from("abc");
-        let expr = Operand::Unary(Box::new(Unary {
-            operator: MonOp::PosOp,
-            operand: Operand::Var(var.clone()),
-        }));
+        let expr = op_unary![MonOp::PosOp, Operand::Var(var.clone())];
         assert_eq!(Wrapping(123), expr.eval(mapping));
 
-        let expr = Operand::Unary(Box::new(Unary {
-            operator: MonOp::NegOp,
-            operand: Operand::Var(var.clone()),
-        }));
+        let expr = op_unary![MonOp::NegOp, Operand::Var(var.clone())];
         assert_eq!(Wrapping(0xffffff85), expr.eval(mapping));
 
-        let expr = Operand::Unary(Box::new(Unary {
-            operator: MonOp::BitNotOp,
-            operand: Operand::Var(var.clone()),
-        }));
+        let expr = op_unary![MonOp::BitNotOp, Operand::Var(var.clone())];
         assert_eq!(Wrapping(0xffffff84), expr.eval(mapping));
     }
 
     #[test]
     fn test_expr_single() {
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(12),
-            rest: vec![],
-        }));
-
+        let expr = op_expr![Operand::unsigned(12)];
         assert_eq!(Wrapping(12), expr.eval(mapping));
 
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::var("abc"),
-            rest: vec![],
-        }));
-
+        let expr = op_expr![Operand::var("abc")];
         assert_eq!(Wrapping(123), expr.eval(mapping));
     }
 
     #[test]
     fn test_expr_valid_ops() {
         // 12 + -13
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(12),
-            rest: vec![BinaryOperation {
-                operator: BinOp::PlusOp,
-                operand: Operand::integer(-13),
-            }],
-        }));
+        let expr = op_expr![Operand::unsigned(12), BinOp::PlusOp, Operand::int(-13)];
         assert_eq!(to_u32(Wrapping(-1)), expr.eval(mapping));
 
         // 12 - 13
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(12),
-            rest: vec![BinaryOperation {
-                operator: BinOp::MinusOp,
-                operand: Operand::integer(13),
-            }],
-        }));
+        let expr = op_expr![Operand::unsigned(12), BinOp::MinusOp, Operand::int(13)];
         assert_eq!(to_u32(Wrapping(-1)), expr.eval(mapping));
 
         // 12 * -1
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(12),
-            rest: vec![BinaryOperation {
-                operator: BinOp::TimesOp,
-                operand: Operand::integer(-1),
-            }],
-        }));
+        let expr = op_expr![Operand::unsigned(12), BinOp::TimesOp, Operand::int(-1)];
         assert_eq!(to_u32(Wrapping(-12)), expr.eval(mapping));
 
         // -4 / -2
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::integer(-4),
-            rest: vec![BinaryOperation {
-                operator: BinOp::DivideOp,
-                operand: Operand::integer(-2),
-            }],
-        }));
+        let expr = op_expr![Operand::int(-4), BinOp::DivideOp, Operand::int(-2)];
         assert_eq!(to_u32(Wrapping(2)), expr.eval(mapping));
 
         // 4 / -2
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::integer(4),
-            rest: vec![BinaryOperation {
-                operator: BinOp::DivideOp,
-                operand: Operand::integer(-2),
-            }],
-        }));
+        let expr = op_expr![Operand::int(4), BinOp::DivideOp, Operand::int(-2)];
         assert_eq!(to_u32(Wrapping(-2)), expr.eval(mapping));
 
         // -4 / 2
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::integer(-4),
-            rest: vec![BinaryOperation {
-                operator: BinOp::DivideOp,
-                operand: Operand::integer(2),
-            }],
-        }));
+        let expr = op_expr![Operand::int(-4), BinOp::DivideOp, Operand::int(2)];
         assert_eq!(to_u32(Wrapping(-2)), expr.eval(mapping));
 
         // 2 / 4
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::integer(2),
-            rest: vec![BinaryOperation {
-                operator: BinOp::DivideOp,
-                operand: Operand::integer(4),
-            }],
-        }));
+        let expr = op_expr![Operand::int(2), BinOp::DivideOp, Operand::int(4)];
         assert_eq!(to_u32(Wrapping(0)), expr.eval(mapping));
 
         // 0xffff0000 & -1
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(0xffff0000),
-            rest: vec![BinaryOperation {
-                operator: BinOp::BitAndOp,
-                operand: Operand::integer(-1),
-            }],
-        }));
+        let expr = op_expr![
+            Operand::unsigned(0xffff0000),
+            BinOp::BitAndOp,
+            Operand::int(-1)
+        ];
         assert_eq!(Wrapping(0xffff0000), expr.eval(mapping));
 
         // 0xffff0000 | -1
-        let expr = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(0xffff0000),
-            rest: vec![BinaryOperation {
-                operator: BinOp::BitOrOp,
-                operand: Operand::integer(-1),
-            }],
-        }));
+        let expr = op_expr![
+            Operand::unsigned(0xffff0000),
+            BinOp::BitOrOp,
+            Operand::int(-1)
+        ];
         assert_eq!(Wrapping(0xffffffff), expr.eval(mapping));
     }
 
     #[test]
     fn test_expr_nested() {
         // 12 - 13 = -1
-        let expr_neg1 = Operand::Expr(Box::new(Expr {
-            first: Operand::constant(12),
-            rest: vec![BinaryOperation {
-                operator: BinOp::PlusOp,
-                operand: Operand::integer(-13),
-            }],
-        }));
-        assert_eq!(Operand::integer(-1).eval(mapping), expr_neg1.eval(mapping));
+        let expr_neg1 = op_expr![Operand::unsigned(12), BinOp::PlusOp, Operand::int(-13)];
+        assert_eq!(Operand::int(-1).eval(mapping), expr_neg1.eval(mapping));
 
         // Compound instruction
         // abc + abc + abc = 123 * 3 = 369
-        let expr_369 = Operand::Expr(Box::new(Expr {
-            first: Operand::var("abc"),
-            rest: vec![
-                BinaryOperation {
-                    operator: BinOp::PlusOp,
-                    operand: Operand::var("abc"),
-                },
-                BinaryOperation {
-                    operator: BinOp::PlusOp,
-                    operand: Operand::var("abc"),
-                },
-            ],
-        }));
+        let expr_369 = op_expr![
+            Operand::var("abc"),
+            BinOp::PlusOp,
+            Operand::var("abc"),
+            BinOp::PlusOp,
+            Operand::var("abc")
+        ];
         assert_eq!(Wrapping(369), expr_369.eval(mapping));
 
         // Compound instruction
         // one * deadbeef / abc = 30373402
-        let expr_30373402 = Operand::Expr(Box::new(Expr {
-            first: Operand::var("one"),
-            rest: vec![
-                BinaryOperation {
-                    operator: BinOp::TimesOp,
-                    operand: Operand::var("deadbeef"),
-                },
-                BinaryOperation {
-                    operator: BinOp::DivideOp,
-                    operand: Operand::var("abc"),
-                },
-            ],
-        }));
+        let expr_30373402 = op_expr![
+            Operand::var("one"),
+            BinOp::TimesOp,
+            Operand::var("deadbeef"),
+            BinOp::DivideOp,
+            Operand::var("abc")
+        ];
         assert_eq!(-Wrapping::<u32>(4545030), expr_30373402.eval(mapping));
 
-        let complex = Operand::Expr(Box::new(Expr {
-            first: expr_neg1,
-            rest: vec![
-                BinaryOperation {
-                    operator: BinOp::TimesOp,
-                    operand: expr_30373402,
-                },
-                BinaryOperation {
-                    operator: BinOp::DivideOp,
-                    operand: expr_369,
-                },
-            ],
-        }));
-
+        let complex = op_expr![
+            expr_neg1,
+            BinOp::TimesOp,
+            expr_30373402,
+            BinOp::DivideOp,
+            expr_369
+        ];
         assert_eq!(Wrapping(12317), complex.eval(mapping))
+    }
+
+    #[test]
+    fn test_additive_precedence() {
+        use BinOp::*;
+
+        let set = hashset! {TimesOp, DivideOp, PlusOp, MinusOp, BitAndOp, BitOrOp};
+        for op in set.iter() {
+            let same_precedence = BinOp::same_precedence(&PlusOp, op);
+            match op {
+                PlusOp => assert_eq!(true, same_precedence),
+                MinusOp => assert_eq!(true, same_precedence),
+                _ => assert_eq!(false, same_precedence),
+            };
+        }
+
+        for op in set.iter() {
+            let same_precedence = BinOp::same_precedence(&MinusOp, op);
+            match op {
+                PlusOp => assert_eq!(true, same_precedence),
+                MinusOp => assert_eq!(true, same_precedence),
+                _ => assert_eq!(false, same_precedence),
+            };
+        }
+    }
+
+    #[test]
+    fn test_multiplicative_precedence() {
+        use BinOp::*;
+
+        let set = hashset! {TimesOp, DivideOp, PlusOp, MinusOp, BitAndOp, BitOrOp};
+        for op in set.iter() {
+            let same_precedence = BinOp::same_precedence(&DivideOp, op);
+            match op {
+                TimesOp => assert_eq!(true, same_precedence),
+                DivideOp => assert_eq!(true, same_precedence),
+                _ => assert_eq!(false, same_precedence),
+            };
+        }
+
+        for op in set.iter() {
+            let same_precedence = BinOp::same_precedence(&DivideOp, op);
+            match op {
+                TimesOp => assert_eq!(true, same_precedence),
+                DivideOp => assert_eq!(true, same_precedence),
+                _ => assert_eq!(false, same_precedence),
+            };
+        }
+    }
+
+    #[test]
+    fn test_combine_same_precedence() {
+        let a = op_expr![Operand::int(-1), BinOp::PlusOp, Operand::unsigned(2)];
+        let b = op_expr![Operand::int(3)];
+        let c = Operand::combine(a, BinOp::MinusOp, b);
+
+        if let Operand::Expr(expr) = c {
+            assert_eq!(2, expr.rest.len());
+            assert_eq!(BinOp::MinusOp, expr.rest[1].operator);
+            assert_eq!(Wrapping(3), expr.rest[1].operand.eval(mapping));
+        } else {
+            panic!("Operand is not an expression")
+        }
+    }
+
+    #[test]
+    fn test_combine_different_precedence() {
+        let a = op_expr![Operand::int(-1), BinOp::PlusOp, Operand::unsigned(2)];
+        let b = op_expr![Operand::int(3)];
+        let c = Operand::combine(a, BinOp::TimesOp, b);
+
+        if let Operand::Expr(expr) = c {
+            assert_eq!(1, expr.rest.len());
+            assert_eq!(BinOp::TimesOp, expr.rest[0].operator);
+            assert_eq!(Wrapping(3), expr.rest[0].operand.eval(mapping));
+        } else {
+            panic!("Operand is not an expression")
+        }
+    }
+
+    /* Algebraic notation test */
+    #[test]
+    fn test_algebraic() {
+        let a = Operand::unsigned(1);
+        let res: Operand = a + 2 + 3;
+        assert_eq!(Wrapping(6), res.eval(mapping));
+
+        let a = Operand::unsigned(1);
+        let res: Operand = a + 2 * 3 + "abc";
+        assert_eq!(Wrapping(130), res.eval(mapping));
+
+        let abc = Operand::var("abc");
+        let abc2 = Operand::var("abc");
+        let res: Operand = Operand::unsigned(1) + abc * abc2 + 42;
+        assert_eq!(Wrapping(15172), res.eval(mapping));
     }
 }
