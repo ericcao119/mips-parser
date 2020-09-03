@@ -9,7 +9,6 @@ extern crate maplit;
 #[macro_use]
 extern crate lazy_static;
 
-mod arith;
 mod expression;
 mod ident;
 
