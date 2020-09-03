@@ -1,5 +1,5 @@
 [package]
-name = "spimbot-rs"
+name = "mips_parser"
 version = "0.1.0"
 authors = ["Eric Cao <eric7252000@gmail.com>"]
 edition = "2018"
