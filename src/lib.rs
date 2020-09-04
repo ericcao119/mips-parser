@@ -9,8 +9,12 @@ extern crate maplit;
 #[macro_use]
 extern crate lazy_static;
 
-mod expression;
-mod ident;
+extern crate itertools;
+
+extern crate strip_ansi_escapes;
+
+pub mod expression;
+pub mod parser;
 
 #[cfg(test)]
 mod tests {
