@@ -137,7 +137,7 @@ impl fmt::Display for BinOp {
 // Atomic expression types
 
 /// Expression for applying a unary operation to a operand
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Unary {
     operator: MonOp,
     operand: Operand,
@@ -163,7 +163,7 @@ impl Eval for Unary {
 
 /// This helper struct represents the right hand side of an operation
 /// So, if we have `1 + 2 -3`, then `+2` and `-3` are the binary operations applied to the left hand side
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BinaryOperation {
     operator: BinOp,
     operand: Operand,
@@ -177,7 +177,7 @@ impl fmt::Display for BinaryOperation {
 
 /// An general-case binary expression. We assume that all expressions on the same level have equal precedence.
 /// Operations are appplied left to right and it can support chained binary operations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Binary {
     first: Operand,
     rest: Vec<BinaryOperation>,
@@ -225,7 +225,7 @@ impl Eval for Binary {
 /// - The beginning of an expression needs to be seeded with an operand. E.g. in a * b + b * d, both a and c need to be operands due to precedence
 /// - All integral types are represented by u32 with wrapping arithmetic. The only exception is multiplication and division where we explicitly convert
 /// use wrapping i32 arithmetic
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operand {
     Var(String),
     Num(Wrapping<u32>),
