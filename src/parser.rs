@@ -24,14 +24,60 @@ pub fn parse(source: &str) -> Result<(), Error<Rule>> {
     Ok(())
 }
 
-fn parse_expr_helper(source: &str) -> Operand {
-    let mut pairs = MIPSParser::parse(Rule::expr, source).unwrap();
-    let pair = pairs.next().unwrap();
-    match pair.as_rule() {
-        Rule::expr => {
-            parse_expr(pair).unwrap()
+macro_rules! parser_helper {
+    (fn $name: ident -> $ret:ty, $pair: ident: $type: expr, $pat: pat => $body: expr) => {
+        fn $name(source: &str) -> $ret {
+            let mut pairs = MIPSParser::parse($type, source).unwrap();
+            let $pair = pairs.next().unwrap();
+            match $pair.as_rule() {
+                $pat => $body,
+                _ => panic!("Failed"),
+            }
         }
-        _ => panic!("Failed"),
+    };
+}
+
+fn parse_unsigned(pair: pest::iterators::Pair<Rule>) -> u32 {
+    match pair.as_rule() {
+        Rule::unsigned => {
+            let mut pairs = pair.into_inner();
+            let inner = pairs.next().unwrap();
+
+            match inner.as_rule() {
+                Rule::bin => u32::from_str_radix(&inner.as_str()[2..].replace("_", ""), 2).unwrap(),
+
+                Rule::hex => {
+                    u32::from_str_radix(&inner.as_str()[2..].replace("_", ""), 16).unwrap()
+                }
+
+                Rule::dec => u32::from_str_radix(&inner.as_str().replace("_", ""), 10).unwrap(),
+                Rule::char => {
+                    let character_str = inner.as_str().trim_matches('\'');
+                    let character = match &character_str[..] {
+                        r"\n" => '\n' as u8,
+                        r"\t" => '\t' as u8,
+                        r"\\" => '\\' as u8,
+                        r"\0" => '\0' as u8,
+                        r#"\0""# => '"' as u8,
+                        r"\'" => '\'' as u8,
+                        &_ => {
+                            if &character_str[..1] != r"\" {
+                                // Plain character
+                                *(&character_str[..1].chars().next().unwrap()) as u8
+                            } else if &character_str[..2] == r"\x" {
+                                // Hex encoding
+                                u8::from_str_radix(&character_str[2..], 16).unwrap()
+                            } else {
+                                panic!("Unrecognized escape")
+                            }
+                        }
+                    };
+                    character as u32
+                }
+                _ => panic!("Invalid rule within unsigned!"),
+            }
+        }
+        _ => panic!("Called parse_unsigned with rule that is not unsigned!"),
     }
 }
 
@@ -141,27 +187,11 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Operand, ()> {
             let inner = pairs.next().unwrap();
 
             match inner.as_rule() {
-                Rule::unsigned => parse_expr(inner),
+                Rule::unsigned => Ok(Operand::unsigned(parse_unsigned(inner))),
                 Rule::ident => Ok(Operand::var(inner.as_str())),
                 Rule::expr => parse_expr(inner),
                 _ => panic!("Invalid rule within unsigned!"),
             }
-        }
-        Rule::unsigned => {
-            let mut pairs = pair.into_inner();
-            let inner = pairs.next().unwrap();
-
-            Ok(match inner.as_rule() {
-                Rule::bin => Operand::unsigned(u32::from_str_radix(&inner.as_str().replace("_", ""), 2).unwrap()),
-                Rule::hex => Operand::unsigned(u32::from_str_radix(&inner.as_str().replace("_", ""), 16).unwrap()),
-                Rule::dec => Operand::unsigned(u32::from_str_radix(&inner.as_str().replace("_", ""), 10).unwrap()),
-                Rule::char => {
-                    let character_str = inner.as_str().trim_matches('\'');
-                    let character = strip_ansi_escapes::strip(character_str).unwrap();
-                    Operand::unsigned(character[0] as u32)
-                }
-                _ => panic!("Invalid rule within unsigned!"),
-            })
         }
         _ => panic!("Unmatched case in expression!"),
     }
@@ -170,6 +200,18 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Operand, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    parser_helper!(fn parse_expr_helper -> Operand, pair: Rule::expr, Rule::expr => parse_expr(pair).unwrap());
+    parser_helper!(fn parse_unsigned_helper -> u32, pair: Rule::unsigned, Rule::unsigned => parse_unsigned(pair));
+
+    // fn parse_unsigned_helper(source: &str) -> u32 {
+    //     let mut pairs = MIPSParser::parse(Rule::unsigned, source).unwrap();
+    //     let pair = pairs.next().unwrap();
+    //     match pair.as_rule() {
+    //         Rule::unsigned => parse_unsigned(pair),
+    //         _ => panic!("Failed"),
+    //     }
+    // }
 
     #[test]
     fn test_ident() {
@@ -241,10 +283,24 @@ mod tests {
         }
     }
 
+    // #[test]
+    // fn test_run() {
+    //     let expr = parse_helper("'a' * 0B_10_1 & b * 'c'");
+    //     // let expr = parse_expr_helper("'a' * 0_00_1 & b * 'c'");
+    //     println!("{:?}", expr)
+    // }
+
     #[test]
-    fn test_run() {
-        let expr = parse_expr_helper("'a' * 0_00_1 & b * 'c'");
-        println!("{:?}", expr)
+    fn test_unsigned() {
+        assert_eq!(5, parse_unsigned_helper("0B_10_1"));
+        assert_eq!(3, parse_unsigned_helper("0b_01_1"));
+        assert_eq!(510, parse_unsigned_helper("0x_1f_e"));
+        assert_eq!(239, parse_unsigned_helper("0X_E_f"));
+        assert_eq!(239, parse_unsigned_helper("239"));
+        assert_eq!(99, parse_unsigned_helper("'c'"));
+        assert_eq!(10, parse_unsigned_helper(r"'\n'"));
+        assert_eq!(0, parse_unsigned_helper(r#"'\0'"#));
+        assert_eq!(255, parse_unsigned_helper(r#"'\xff'"#));
     }
 
     #[test]
