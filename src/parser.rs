@@ -10,6 +10,7 @@ use itertools::Itertools;
 #[grammar = "mips.pest"]
 struct MIPSParser;
 
+/// Function for parsing entire program into a list of commands
 pub fn parse(source: &str) -> Result<(), Error<Rule>> {
     let pairs = MIPSParser::parse(Rule::expr, source)?;
     for pair in pairs {
@@ -21,22 +22,15 @@ pub fn parse(source: &str) -> Result<(), Error<Rule>> {
         }
     }
 
-    Ok(())
+    unimplemented!()
 }
 
-macro_rules! parser_helper {
-    (fn $name: ident -> $ret:ty, $pair: ident: $type: expr, $pat: pat => $body: expr) => {
-        fn $name(source: &str) -> $ret {
-            let mut pairs = MIPSParser::parse($type, source).unwrap();
-            let $pair = pairs.next().unwrap();
-            match $pair.as_rule() {
-                $pat => $body,
-                _ => panic!("Failed"),
-            }
-        }
-    };
-}
 
+/// Sub parser for unsigned integers. It supports reading from
+/// - Hex strings prefixed with 0X or 0x. Underscores are removed, so 0x_f_f is valid
+/// - Binary strings prefixed with 0B or 0b. Underscores are removed, so 0x_f_f is valid
+/// - Decimal strings.
+/// - Characters
 fn parse_unsigned(pair: pest::iterators::Pair<Rule>) -> u32 {
     match pair.as_rule() {
         Rule::unsigned => {
@@ -81,6 +75,15 @@ fn parse_unsigned(pair: pest::iterators::Pair<Rule>) -> u32 {
     }
 }
 
+
+/// Sub parser for integer expressions. It follows the following operators and precedence
+/// - Unary Operators: ~, +, /
+/// - Multiplicative Operators: * -
+/// - Addititve Operators: = -
+/// - Bitwise And: &
+/// - Bitwise And: |
+/// 
+/// Operands can either be expressed as integers, unsigned, variables, or expressions built from those atomics
 fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Operand, ()> {
     match pair.as_rule() {
         Rule::expr => {
@@ -201,6 +204,19 @@ fn parse_expr(pair: pest::iterators::Pair<Rule>) -> Result<Operand, ()> {
 mod tests {
     use super::*;
 
+    macro_rules! parser_helper {
+    (fn $name: ident -> $ret:ty, $pair: ident: $type: expr, $pat: pat => $body: expr) => {
+        fn $name(source: &str) -> $ret {
+            let mut pairs = MIPSParser::parse($type, source).unwrap();
+            let $pair = pairs.next().unwrap();
+            match $pair.as_rule() {
+                $pat => $body,
+                _ => panic!("Failed"),
+            }
+        }
+    };
+}
+
     parser_helper!(fn parse_expr_helper -> Operand, pair: Rule::expr, Rule::expr => parse_expr(pair).unwrap());
     parser_helper!(fn parse_unsigned_helper -> u32, pair: Rule::unsigned, Rule::unsigned => parse_unsigned(pair));
 
@@ -301,6 +317,13 @@ mod tests {
         assert_eq!(10, parse_unsigned_helper(r"'\n'"));
         assert_eq!(0, parse_unsigned_helper(r#"'\0'"#));
         assert_eq!(255, parse_unsigned_helper(r#"'\xff'"#));
+    }
+
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_unsigned() {
+        assert_eq!(5, parse_unsigned_helper("'as'"));
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::{
 macro_rules! op_expr {
     ($first:expr $(, $op: expr, $operand: expr)*) => {
         {
-            Operand::Expr(Box::new(Expr {
+            Operand::Expr(Box::new(Binary {
                 first: $first,
                 rest: vec![
                     $(
@@ -50,6 +50,7 @@ pub trait Eval {
 }
 
 // C-like Enums
+/// Unary Operators.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum MonOp {
     PosOp,
@@ -80,6 +81,9 @@ impl fmt::Display for MonOp {
     }
 }
 
+/// Binary Operators.
+/// These do support C++ operator precedence
+/// 
 /// Currently at most 2^16 operators can share the same precedence.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub enum BinOp {
@@ -131,6 +135,8 @@ impl fmt::Display for BinOp {
 }
 
 // Atomic expression types
+
+/// Expression for applying a unary operation to a operand
 #[derive(Debug)]
 pub struct Unary {
     operator: MonOp,
@@ -155,6 +161,8 @@ impl Eval for Unary {
     }
 }
 
+/// This helper struct represents the right hand side of an operation
+/// So, if we have `1 + 2 -3`, then `+2` and `-3` are the binary operations applied to the left hand side
 #[derive(Debug)]
 struct BinaryOperation {
     operator: BinOp,
@@ -167,14 +175,15 @@ impl fmt::Display for BinaryOperation {
     }
 }
 
-/// An expression. We assume that all expressions on the same level have equal precedence
+/// An general-case binary expression. We assume that all expressions on the same level have equal precedence.
+/// Operations are appplied left to right and it can support chained binary operations.
 #[derive(Debug)]
-pub struct Expr {
+pub struct Binary {
     first: Operand,
     rest: Vec<BinaryOperation>,
 }
 
-impl fmt::Display for Expr {
+impl fmt::Display for Binary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.first)?;
         for operation in self.rest.iter() {
@@ -184,7 +193,7 @@ impl fmt::Display for Expr {
     }
 }
 
-impl Eval for Expr {
+impl Eval for Binary {
     fn eval(&self, mapping: fn(&str) -> Wrapping<u32>) -> Wrapping<u32> {
         let mut value = self.first.eval(mapping);
         for oper in self.rest.iter() {
@@ -209,12 +218,19 @@ impl Eval for Expr {
     }
 }
 
+/// Operand for wrapping all types of expressions.
+/// 
+/// Just like an operand, we can use algebraic operators on it with a few caveats
+/// 
+/// - The beginning of an expression needs to be seeded with an operand. E.g. in a * b + b * d, both a and c need to be operands due to precedence
+/// - All integral types are represented by u32 with wrapping arithmetic. The only exception is multiplication and division where we explicitly convert
+/// use wrapping i32 arithmetic
 #[derive(Debug)]
 pub enum Operand {
     Var(String),
     Num(Wrapping<u32>),
     Unary(Box<Unary>),
-    Expr(Box<Expr>),
+    Expr(Box<Binary>),
 }
 
 impl Operand {
@@ -223,10 +239,12 @@ impl Operand {
         Operand::Num(Wrapping(num))
     }
 
+    /// Construct a variable type operand
     pub fn var(name: &str) -> Operand {
         Operand::Var(String::from(name))
     }
 
+    /// Construct a integer type operand
     pub fn int(num: i32) -> Operand {
         Operand::Num(Wrapping(unsafe { transmute_copy::<i32, u32>(&num) }))
     }
