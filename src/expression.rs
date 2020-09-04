@@ -50,8 +50,8 @@ pub trait Eval {
 }
 
 // C-like Enums
-
-enum MonOp {
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub enum MonOp {
     PosOp,
     NegOp,
     BitNotOp,
@@ -82,7 +82,7 @@ impl fmt::Display for MonOp {
 
 /// Currently at most 2^16 operators can share the same precedence.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-enum BinOp {
+pub enum BinOp {
     TimesOp = 0x00,
     DivideOp = 0x01,
     // ---
@@ -131,6 +131,7 @@ impl fmt::Display for BinOp {
 }
 
 // Atomic expression types
+#[derive(Debug)]
 pub struct Unary {
     operator: MonOp,
     operand: Operand,
@@ -154,6 +155,7 @@ impl Eval for Unary {
     }
 }
 
+#[derive(Debug)]
 struct BinaryOperation {
     operator: BinOp,
     operand: Operand,
@@ -166,6 +168,7 @@ impl fmt::Display for BinaryOperation {
 }
 
 /// An expression. We assume that all expressions on the same level have equal precedence
+#[derive(Debug)]
 pub struct Expr {
     first: Operand,
     rest: Vec<BinaryOperation>,
@@ -206,6 +209,7 @@ impl Eval for Expr {
     }
 }
 
+#[derive(Debug)]
 pub enum Operand {
     Var(String),
     Num(Wrapping<u32>),
