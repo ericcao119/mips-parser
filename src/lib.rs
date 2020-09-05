@@ -5,6 +5,8 @@ extern crate pest;
 extern crate maplit;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate nom;
 extern crate itertools;
 
 pub mod expression;

@@ -47,6 +47,14 @@ fn to_u32(value: Wrapping<i32>) -> Wrapping<u32> {
 
 pub trait Eval {
     fn eval(&self, mapping: fn(&str) -> Wrapping<u32>) -> Wrapping<u32>;
+
+    fn eval_u32(&self, mapping: fn(&str) -> Wrapping<u32>) -> u32 {
+        self.eval(mapping).0
+    }
+
+    fn eval_i32(&self, mapping: fn(&str) -> Wrapping<u32>) -> i32 {
+        to_i32(self.eval(mapping)).0
+    }
 }
 
 // C-like Enums
