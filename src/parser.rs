@@ -508,6 +508,7 @@ mod tests {
         parse_expr_helper("(0b10101 | 0b1010");
     }
 
+    #[test]
     fn test_order_of_operations() {
         assert_eq!(parse_expr_helper("1 & 2 * 3 | +4 + ~5 - 1").eval_i32(mapping), -3);
         assert_eq!(parse_expr_helper("(1 & (2 * 3 | +4) + ~5) - 1").eval_i32(mapping), -1);
