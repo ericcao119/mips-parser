@@ -9,8 +9,14 @@ extern crate lazy_static;
 extern crate nom;
 extern crate itertools;
 
-pub mod expression;
+
+#[macro_use]
 pub mod parser;
+
+pub mod utils;
+pub mod literals;
+pub mod expression;
+
 
 #[cfg(test)]
 mod tests {

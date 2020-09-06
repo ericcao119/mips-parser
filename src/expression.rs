@@ -3,6 +3,8 @@ use std::{
     num::Wrapping, ops, str, vec::Vec,
 };
 
+use crate::utils::{ToUnsigned, ToSigned};
+
 /* Convenience Macros */
 macro_rules! op_expr {
     ($first:expr $(, $op: expr, $operand: expr)*) => {
@@ -31,17 +33,7 @@ macro_rules! op_unary {
     }};
 }
 
-// Helpers
 
-fn to_i32(value: Wrapping<u32>) -> Wrapping<i32> {
-    let reinterpreted: Wrapping<i32> = Wrapping(unsafe { transmute_copy::<u32, i32>(&value.0) });
-    reinterpreted
-}
-
-fn to_u32(value: Wrapping<i32>) -> Wrapping<u32> {
-    let reinterpreted: Wrapping<u32> = Wrapping(unsafe { transmute_copy::<i32, u32>(&value.0) });
-    reinterpreted
-}
 
 // Traits
 
@@ -53,7 +45,7 @@ pub trait Eval {
     }
 
     fn eval_i32(&self, mapping: fn(&str) -> Wrapping<u32>) -> i32 {
-        to_i32(self.eval(mapping)).0
+        self.eval(mapping).to_i32()
     }
 }
 
@@ -209,14 +201,14 @@ impl Eval for Binary {
                 BinOp::PlusOp => value += oper.operand.eval(mapping),
                 BinOp::MinusOp => value -= oper.operand.eval(mapping),
                 BinOp::TimesOp => {
-                    let mut int = to_i32(value);
-                    int *= to_i32(oper.operand.eval(mapping));
-                    value = to_u32(int);
+                    let mut int = value.to_i32w();
+                    int *= oper.operand.eval(mapping).to_i32w();
+                    value = int.to_u32w();
                 }
                 BinOp::DivideOp => {
-                    let mut int = to_i32(value);
-                    int /= to_i32(oper.operand.eval(mapping));
-                    value = to_u32(int);
+                    let mut int = value.to_i32w();
+                    int /= oper.operand.eval(mapping).to_i32w();
+                    value = int.to_u32w();
                 }
                 BinOp::BitAndOp => value &= oper.operand.eval(mapping),
                 BinOp::BitOrOp => value |= oper.operand.eval(mapping),
@@ -678,31 +670,31 @@ mod tests {
     fn test_expr_valid_ops() {
         // 12 + -13
         let expr = op_expr![Operand::unsigned(12), BinOp::PlusOp, Operand::int(-13)];
-        assert_eq!(to_u32(Wrapping(-1)), expr.eval(mapping));
+        assert_eq!(-1, expr.eval(mapping).to_i32());
 
         // 12 - 13
         let expr = op_expr![Operand::unsigned(12), BinOp::MinusOp, Operand::int(13)];
-        assert_eq!(to_u32(Wrapping(-1)), expr.eval(mapping));
+        assert_eq!(-1, expr.eval(mapping).to_i32());
 
         // 12 * -1
         let expr = op_expr![Operand::unsigned(12), BinOp::TimesOp, Operand::int(-1)];
-        assert_eq!(to_u32(Wrapping(-12)), expr.eval(mapping));
+        assert_eq!(-12, expr.eval(mapping).to_i32());
 
         // -4 / -2
         let expr = op_expr![Operand::int(-4), BinOp::DivideOp, Operand::int(-2)];
-        assert_eq!(to_u32(Wrapping(2)), expr.eval(mapping));
+        assert_eq!(2, expr.eval(mapping).to_i32());
 
         // 4 / -2
         let expr = op_expr![Operand::int(4), BinOp::DivideOp, Operand::int(-2)];
-        assert_eq!(to_u32(Wrapping(-2)), expr.eval(mapping));
+        assert_eq!(-2, expr.eval(mapping).to_i32());
 
         // -4 / 2
         let expr = op_expr![Operand::int(-4), BinOp::DivideOp, Operand::int(2)];
-        assert_eq!(to_u32(Wrapping(-2)), expr.eval(mapping));
+        assert_eq!(-2, expr.eval(mapping).to_i32());
 
         // 2 / 4
         let expr = op_expr![Operand::int(2), BinOp::DivideOp, Operand::int(4)];
-        assert_eq!(to_u32(Wrapping(0)), expr.eval(mapping));
+        assert_eq!(0, expr.eval(mapping).to_i32());
 
         // 0xffff0000 & -1
         let expr = op_expr![
@@ -710,7 +702,7 @@ mod tests {
             BinOp::BitAndOp,
             Operand::int(-1)
         ];
-        assert_eq!(Wrapping(0xffff0000), expr.eval(mapping));
+        assert_eq!(0xffff0000, expr.eval(mapping).to_u32());
 
         // 0xffff0000 | -1
         let expr = op_expr![
@@ -718,7 +710,7 @@ mod tests {
             BinOp::BitOrOp,
             Operand::int(-1)
         ];
-        assert_eq!(Wrapping(0xffffffff), expr.eval(mapping));
+        assert_eq!(0xffffffff, expr.eval(mapping).to_u32());
     }
 
     #[test]
@@ -736,7 +728,7 @@ mod tests {
             BinOp::PlusOp,
             Operand::var("abc")
         ];
-        assert_eq!(Wrapping(369), expr_369.eval(mapping));
+        assert_eq!(369, expr_369.eval(mapping).to_u32());
 
         // Compound instruction
         // one * deadbeef / abc = 30373402
@@ -747,7 +739,7 @@ mod tests {
             BinOp::DivideOp,
             Operand::var("abc")
         ];
-        assert_eq!(-Wrapping::<u32>(4545030), expr_30373402.eval(mapping));
+        assert_eq!(-4545030, expr_30373402.eval(mapping).to_i32());
 
         let complex = op_expr![
             expr_neg1,
@@ -756,7 +748,7 @@ mod tests {
             BinOp::DivideOp,
             expr_369
         ];
-        assert_eq!(Wrapping(12317), complex.eval(mapping))
+        assert_eq!(12317, complex.eval(mapping).to_u32())
     }
 
     #[test]
@@ -816,7 +808,7 @@ mod tests {
         if let Operand::Expr(expr) = c {
             assert_eq!(2, expr.rest.len());
             assert_eq!(BinOp::MinusOp, expr.rest[1].operator);
-            assert_eq!(Wrapping(3), expr.rest[1].operand.eval(mapping));
+            assert_eq!(3, expr.rest[1].operand.eval(mapping).to_i32());
         } else {
             panic!("Operand is not an expression")
         }
@@ -831,7 +823,7 @@ mod tests {
         if let Operand::Expr(expr) = c {
             assert_eq!(1, expr.rest.len());
             assert_eq!(BinOp::TimesOp, expr.rest[0].operator);
-            assert_eq!(Wrapping(3), expr.rest[0].operand.eval(mapping));
+            assert_eq!(3, expr.rest[0].operand.eval(mapping).to_i32());
         } else {
             panic!("Operand is not an expression")
         }
@@ -842,15 +834,15 @@ mod tests {
     fn test_algebraic() {
         let a = Operand::unsigned(1);
         let res: Operand = a + 2 + 3;
-        assert_eq!(Wrapping(6), res.eval(mapping));
+        assert_eq!(6, res.eval(mapping).to_i32());
 
         let a = Operand::unsigned(1);
         let res: Operand = a + 2 * 3 + "abc";
-        assert_eq!(Wrapping(130), res.eval(mapping));
+        assert_eq!(130, res.eval(mapping).to_i32());
 
         let abc = Operand::var("abc");
         let abc2 = Operand::var("abc");
         let res: Operand = Operand::unsigned(1) + abc * abc2 + 42;
-        assert_eq!(Wrapping(15172), res.eval(mapping));
+        assert_eq!(15172, res.eval(mapping).to_i32());
     }
 }
