@@ -80,38 +80,38 @@ pub fn parse_int(pair: pest::iterators::Pair<Rule>) -> i32 {
 mod tests {
     use super::*;
     
-    parser_helper!(fn parse_unsigned_helper -> u32, pair: Rule::unsigned, Rule::unsigned => parse_unsigned(pair));
-    parser_helper!(fn parse_int_helper -> i32, pair: Rule::int, Rule::int => parse_int(pair));
+    parser_helper!(fn parse_unsigned_str -> u32, pair: Rule::unsigned, Rule::unsigned => parse_unsigned(pair));
+    parser_helper!(fn parse_int_str -> i32, pair: Rule::int, Rule::int => parse_int(pair));
 
     #[test]
     fn test_unsigned() {
-        assert_eq!(5, parse_unsigned_helper("0B_10_1"));
-        assert_eq!(3, parse_unsigned_helper("0b_01_1"));
-        assert_eq!(510, parse_unsigned_helper("0x_1f_e"));
-        assert_eq!(239, parse_unsigned_helper("0X_E_f"));
-        assert_eq!(239, parse_unsigned_helper("239"));
-        assert_eq!(99, parse_unsigned_helper("'c'"));
-        assert_eq!(10, parse_unsigned_helper(r"'\n'"));
-        assert_eq!(0, parse_unsigned_helper(r#"'\0'"#));
-        assert_eq!(255, parse_unsigned_helper(r#"'\xff'"#));
+        assert_eq!(5, parse_unsigned_str("0B_10_1"));
+        assert_eq!(3, parse_unsigned_str("0b_01_1"));
+        assert_eq!(510, parse_unsigned_str("0x_1f_e"));
+        assert_eq!(239, parse_unsigned_str("0X_E_f"));
+        assert_eq!(239, parse_unsigned_str("239"));
+        assert_eq!(99, parse_unsigned_str("'c'"));
+        assert_eq!(10, parse_unsigned_str(r"'\n'"));
+        assert_eq!(0, parse_unsigned_str(r#"'\0'"#));
+        assert_eq!(255, parse_unsigned_str(r#"'\xff'"#));
     }
 
     #[test]
     fn test_int() {
-        assert_eq!(5, parse_int_helper("0B_10_1"));
-        assert_eq!(-3, parse_int_helper("-0b_01_1"));
-        assert_eq!(510, parse_int_helper("0x_1f_e"));
-        assert_eq!(-239, parse_int_helper("-0X_E_f"));
-        assert_eq!(239, parse_int_helper("239"));
-        assert_eq!(-99, parse_int_helper("-'c'"));
-        assert_eq!(10, parse_int_helper(r"'\n'"));
-        assert_eq!(0, parse_int_helper(r#"'\0'"#));
-        assert_eq!(-255, parse_int_helper(r#"-'\xff'"#));
+        assert_eq!(5, parse_int_str("0B_10_1"));
+        assert_eq!(-3, parse_int_str("-0b_01_1"));
+        assert_eq!(510, parse_int_str("0x_1f_e"));
+        assert_eq!(-239, parse_int_str("-0X_E_f"));
+        assert_eq!(239, parse_int_str("239"));
+        assert_eq!(-99, parse_int_str("-'c'"));
+        assert_eq!(10, parse_int_str(r"'\n'"));
+        assert_eq!(0, parse_int_str(r#"'\0'"#));
+        assert_eq!(-255, parse_int_str(r#"-'\xff'"#));
     }
 
     #[test]
     #[should_panic]
     fn test_invalid_unsigned() {
-        assert_eq!(5, parse_unsigned_helper("'as'"));
+        assert_eq!(5, parse_unsigned_str("'as'"));
     }
 }

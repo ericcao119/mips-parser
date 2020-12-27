@@ -199,38 +199,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ident() {
-        let case = "abc";
-        let expected = "abc";
-        let mut pairs = MIPSParser::parse(Rule::ident, case).unwrap().into_iter();
-        assert_eq!(pairs.next().unwrap().as_str(), expected);
-    }
-
-    #[test]
-    fn test_special() {
-        let case = "_$$";
-        let expected = "_$$";
-        let mut pairs = MIPSParser::parse(Rule::ident, case).unwrap().into_iter();
-        assert_eq!(pairs.next().unwrap().as_str(), expected);
-    }
-
-    #[test]
-    #[should_panic]
-    fn fail_ident() {
-        let case = "0ab";
-        let mut pairs = MIPSParser::parse(Rule::ident, case).unwrap().into_iter();
-        pairs.next().unwrap().as_str();
-    }
-
-    #[test]
-    #[should_panic]
-    fn fail_ident_reserved_keyword() {
-        let case = "$s0";
-        let mut pairs = MIPSParser::parse(Rule::ident, case).unwrap().into_iter();
-        pairs.next().unwrap().as_str();
-    }
-
-    #[test]
     fn test_reg() {
         let general_registers = [
             "$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$10", "$11", "$12", "$13",

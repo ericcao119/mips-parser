@@ -10,6 +10,7 @@ use nom::{
 ///
 /// So "ab\tcd" => "ab  cd"
 fn unescape(escaped_str: &str) -> String {
+    // This is really annoying to do in rust, so we use nom to parse this properly
     const HEX_DIGIT: &str = "0123456789abcdefABCDEF";
     let escape_string: IResult<&str, String, ()> =
         escaped_transform(none_of("\\"), r"\".chars().next().unwrap(), |i: &str| {
@@ -23,7 +24,6 @@ fn unescape(escaped_str: &str) -> String {
             | tag!("\'")      => { |_| { '\'' }}
             | preceded!(char!('x'), tuple!(one_of!(HEX_DIGIT), one_of!(HEX_DIGIT))) => {
                 |(c1, c2): (char, char)| {
-                    println!("Hex String");
                     match (c1.to_digit(16), c2.to_digit(16)) {
                     (Some(d1), Some(d2)) => {
                         (((d1 as u8) << 4) + d2 as u8) as char
