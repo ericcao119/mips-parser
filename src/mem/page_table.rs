@@ -519,7 +519,7 @@ impl PageTable {
         }
     }
 
-    fn segments(&self) -> [&dyn Segment; 8] {
+    pub fn segments(&self) -> [&dyn Segment; 8] {
         [&self.data_seg, &self.text_seg, &self.heap_seg, &self.stack_seg, &self.kdata_seg, &self.ktext_seg, &self.mmio_seg, &self.mmap_seg]
     }
 
@@ -835,13 +835,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Cannot make executable segment writeable!")]
-    fn fail_make_writeable_X() {
+    fn fail_make_writeable_x() {
         ControlFlags::X.make_writeable();
     }
 
     #[test]
     #[should_panic(expected = "Cannot make executable segment writeable!")]
-    fn fail_make_writeable_RX() {
+    fn fail_make_writeable_rx() {
         ControlFlags::RX.make_writeable();
     }
 
@@ -867,13 +867,13 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "Cannot make writable segment executable!")]
-    fn fail_make_executable_W() {
+    fn fail_make_executable_w() {
         ControlFlags::W.make_executable();
     }
 
     #[test]
     #[should_panic(expected = "Cannot make writable segment executable!")]
-    fn fail_make_executable_RW() {
+    fn fail_make_executable_rw() {
         ControlFlags::RW.make_executable();
     }
 }

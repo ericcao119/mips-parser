@@ -1,12 +1,16 @@
 use std::str::FromStr;
 
-use crate::mips_lang::types::arch::*;
-use crate::mips_lang::{IResult, Span};
+use crate::mips_lang::{
+    types::arch::*,
+    types::expression::Operand,
+    IResult, Span
+};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TokenValue {
     Register(Reg),
     FloatReg(FpReg),
+    Expression(Operand)
 }
 
 #[derive(Debug)]

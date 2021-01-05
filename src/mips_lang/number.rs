@@ -18,7 +18,7 @@ pub struct Token<'a> {
     pub bar: &'a str,
 }
 
-const NUM_REGISTERS: u32 = 32;
+pub const NUM_REGISTERS: u32 = 32;
 
 // fn alternative<'a>(input: &'a [u8], alternatives: &Vec<String>) -> IResult<&'a [u8], &'a [u8]> {
 //     for alternative in alternatives {
@@ -42,7 +42,7 @@ impl Display for Reg {
 }
 
 impl Reg {
-    fn new(idx: u32) -> Self {
+    pub fn new(idx: u32) -> Self {
         if idx >= NUM_REGISTERS {
             panic!("Register number {} is too large!", idx);
         }

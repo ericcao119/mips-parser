@@ -5,9 +5,14 @@ use nom::Err;
 #[derive(Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Default(nom::error::ErrorKind),
+    // Rust parse error
+    InvalidBinaryString,
+    InvalidHexString,
+
     // Custom Error Types
     InvalidRegister,
     UnrecognizedInstruction,
+    InvalidCharacterEscape
 }
 
 #[derive(Debug)]
@@ -54,4 +59,5 @@ impl<'a> ChangeErrorKind for nom::Err<MIPSLangError<'a>> {
             internal_error.kind = error_kind;
         }
     }
+
 }

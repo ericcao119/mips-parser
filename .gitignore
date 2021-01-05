@@ -4,3 +4,5 @@ Cargo.lock
 .vscode/
 .pytest_cache/
 .mypy_cache/
+
+lcov.info

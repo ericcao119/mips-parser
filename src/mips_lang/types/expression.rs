@@ -590,6 +590,8 @@ impl Operand {
         // Since it is so useless, we just compress it entirely.
         self
     }
+
+    // TODO: Add simplify
 }
 
 #[cfg(test)]

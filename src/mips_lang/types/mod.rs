@@ -5,3 +5,4 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 pub type IResult<'a, O> = nom::IResult<Span<'a>, O, MIPSLangError<'a>>;
 
 pub mod arch;
+pub mod expression;

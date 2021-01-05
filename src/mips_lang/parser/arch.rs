@@ -110,7 +110,7 @@ mod tests {
 
     #[test]
     fn test_parse_register() {
-        for (idx, reg_str) in VALID_REGISTERS.into_iter().enumerate() {
+        for (idx, reg_str) in VALID_REGISTERS.iter().enumerate() {
             let s = Span::new(reg_str);
             let (remain_str, token) = Reg::parse(s).unwrap();
             assert!("" == *remain_str.fragment());
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn test_parse_fp_register() {
-        for (idx, reg_str) in VALID_FP_REGISTERS.into_iter().enumerate() {
+        for (idx, reg_str) in VALID_FP_REGISTERS.iter().enumerate() {
             let s = Span::new(reg_str);
             let (remain_str, token) = FpReg::parse(s).unwrap();
             assert!("" == *remain_str.fragment());
